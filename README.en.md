@@ -1,4 +1,8 @@
-# AI Shopping Agent
+# AI Shopping Agent / AI 购物代理
+
+A product fact layer for shopping agents. Sellers publish checkable specs. After the seller confirms a customer-service answer, it is written back onto the product so the next agent does not ask again. Checkout stays with the seller.
+
+给购买代理用的商品事实层。卖家上传可核对的规格；客服回答经卖家确认后写回商品，避免下一个代理重复提问；结账留在卖家收银台。
 
 [中文](README.md)
 
@@ -39,7 +43,7 @@ Rules already implemented:
 - An ask does not accept budget, address, or identity, and those fields are not stored.
 - The attribution window is 7 days. An order outside the window is not a platform sale. A refund only marks the commission as pending reversal. This release does not move money.
 
-The fuller rules, roles, and acceptance criteria are in the [requirements document](docs/AI购物代理需求文档.md) (Chinese).
+The fuller rules, roles, and acceptance criteria are in the [requirements document](docs/requirements.en.md). The Chinese original is [here](docs/AI购物代理需求文档.md).
 
 ## Try it
 
