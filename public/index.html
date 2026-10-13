@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <title>USB-C 适配器事实库</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <h1>USB-C 电源适配器事实库</h1>
+    <p>购买代理通过工具读取已确认事实。页面用来录入、确认和抽查短名单。结账留在卖家收银台，这里只记录归因。</p>
+    <section>
+      <h2>入口</h2>
+      <p><a href="/buyer.html">买家短名单</a></p>
+      <p><a href="/seller.html">卖家录入与问题箱</a></p>
+    </section>
+    <section>
+      <h2>代理工具</h2>
+      <ul>
+        <li><code>POST /api/tools/search_products</code></li>
+        <li><code>POST /api/tools/get_product</code></li>
+        <li><code>POST /api/tools/compare_products</code></li>
+        <li><code>POST /api/tools/ask_seller</code></li>
+        <li><code>POST /api/tools/create_handoff</code></li>
+      </ul>
+      <p class="muted">必填字段没有已确认取值时返回「未知」。未确认的抽取结果不会出现在这些接口里。</p>
+    </section>
+  </main>
+</body>
+</html>

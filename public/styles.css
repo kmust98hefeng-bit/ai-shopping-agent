@@ -1,0 +1,104 @@
+:root {
+  color: #1c1c1c;
+  background: #f6f5f2;
+  font-family: "Segoe UI", "PingFang SC", sans-serif;
+  line-height: 1.5;
+}
+
+body {
+  margin: 0;
+  padding: 24px;
+}
+
+main {
+  max-width: 980px;
+  margin: 0 auto;
+}
+
+h1, h2, h3 {
+  line-height: 1.25;
+}
+
+a {
+  color: #1f4b99;
+}
+
+section, article, form {
+  background: #fff;
+  border: 1px solid #ddd8cf;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+label {
+  display: block;
+  margin: 8px 0;
+}
+
+input, select, textarea, button {
+  font: inherit;
+}
+
+input, select, textarea {
+  width: 100%;
+  max-width: 420px;
+  box-sizing: border-box;
+  padding: 6px 8px;
+}
+
+textarea {
+  min-height: 120px;
+}
+
+button {
+  margin: 4px 8px 4px 0;
+  padding: 6px 10px;
+  border: 1px solid #1f4b99;
+  background: #1f4b99;
+  color: #fff;
+  cursor: pointer;
+}
+
+button.secondary {
+  background: #fff;
+  color: #1f4b99;
+}
+
+.row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #eee;
+  padding: 8px 0;
+}
+
+.muted, .rule {
+  color: #5c584f;
+}
+
+.error {
+  color: #8d1d1d;
+}
+
+.fact-id, .attribution-id {
+  font-family: Consolas, monospace;
+}
+
+#agent-view, #ask-result {
+  white-space: pre-wrap;
+  background: #f3f1eb;
+  padding: 12px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  border-bottom: 1px solid #eee;
+  text-align: left;
+  padding: 6px;
+  vertical-align: top;
+}
