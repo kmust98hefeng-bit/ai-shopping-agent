@@ -2,20 +2,20 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>USB-C 适配器事实库</title>
+  <title>USB-C 适配器事实库 / USB-C adapter fact base</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main>
-    <h1>USB-C 电源适配器事实库</h1>
-    <p>购买代理通过工具读取已确认事实。页面用来录入、确认和抽查短名单。结账留在卖家收银台，这里只记录归因。</p>
+    <h1><span class="bi">USB-C 电源适配器事实库<span class="en">USB-C power adapter fact base</span></span></h1>
+    <p><span class="bi">购买代理通过工具读取已确认事实。页面用来录入、确认和抽查短名单。结账留在卖家收银台，这里只记录归因。<span class="en">Shopping agents read confirmed facts through the tools. These pages are for entry, confirmation, and checking the shortlist. Checkout stays with the seller. This site only records attribution.</span></span></p>
     <section>
-      <h2>入口</h2>
-      <p><a href="/buyer.html">买家短名单</a></p>
-      <p><a href="/seller.html">卖家录入与问题箱</a></p>
+      <h2><span class="bi">入口<span class="en">Enter</span></span></h2>
+      <p><a href="/buyer.html"><span class="bi">买家短名单<span class="en">Buyer shortlist</span></span></a></p>
+      <p><a href="/seller.html"><span class="bi">卖家录入与问题箱<span class="en">Seller entry and question inbox</span></span></a></p>
     </section>
     <section>
-      <h2>代理工具</h2>
+      <h2><span class="bi">代理工具<span class="en">Agent tools</span></span></h2>
       <ul>
         <li><code>POST /api/tools/search_products</code></li>
         <li><code>POST /api/tools/get_product</code></li>
@@ -23,7 +23,8 @@
         <li><code>POST /api/tools/ask_seller</code></li>
         <li><code>POST /api/tools/create_handoff</code></li>
       </ul>
-      <p class="muted">必填字段没有已确认取值时返回「未知」。未确认的抽取结果不会出现在这些接口里。</p>
+      <p><a href="/.well-known/ucp"><span class="bi">能力说明：这里做调研，付款在卖家收银台<span class="en">Capability profile: research here, payment at the seller checkout</span></span></a></p>
+      <p class="muted"><span class="bi">必填字段没有已确认取值时返回「未知」。未确认的抽取结果不会出现在这些接口里。<span class="en">A required field with no confirmed value returns "unknown". Unconfirmed extracts do not appear in these endpoints.</span></span></p>
     </section>
   </main>
 </body>

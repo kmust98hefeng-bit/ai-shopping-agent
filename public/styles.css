@@ -73,8 +73,24 @@ button.secondary {
   padding: 8px 0;
 }
 
-.muted, .rule {
+.muted, .rule, .en {
   color: #5c584f;
+}
+
+.bi {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+}
+
+.en {
+  font-size: 0.85em;
+  font-weight: 400;
+}
+
+button .bi {
+  align-items: center;
 }
 
 .error {

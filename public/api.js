@@ -9,6 +9,7 @@ export async function api(path, options = {}) {
   const body = await response.json();
   if (!response.ok) {
     const error = new Error(body.error || "请求失败");
+    error.errorEn = body.errorEn || "Request failed";
     error.body = body;
     throw error;
   }
@@ -32,7 +33,16 @@ export function h(tag, attrs = {}, children = []) {
   return node;
 }
 
+export function line(zh, en) {
+  const children = [h("span", { text: zh == null ? "" : String(zh) })];
+  if (en) children.push(h("span", { className: "en", text: String(en) }));
+  return h("span", { className: "bi" }, children);
+}
+
 export function showError(error) {
   const node = document.querySelector("#error");
-  if (node) node.textContent = error.message || String(error);
+  if (!node) return;
+  const zh = error.message || String(error);
+  const en = error.errorEn || (zh === "请求失败" ? "Request failed" : "");
+  node.replaceChildren(line(zh, en));
 }

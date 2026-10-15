@@ -31,6 +31,25 @@ const PATTERNS = [
     unit: null,
     pattern: /^输入电压\s*[:：]\s*(.+)$/i,
   },
+  {
+    attributeId: ATTR.model,
+    condition: "型号",
+    unit: null,
+    pattern: /^型号\s*[:：]\s*(.+)$/i,
+  },
+  {
+    attributeId: ATTR.gtin,
+    condition: "GTIN",
+    unit: null,
+    pattern: /^GTIN\s*[:：]\s*(\d{8,14})$/i,
+  },
+  {
+    attributeId: ATTR.cert,
+    condition: "认证",
+    unit: null,
+    pattern: /^安全认证\s*[:：]\s*(.+)$/i,
+    certification: true,
+  },
 ];
 
 export function extractSpec(text) {
@@ -46,14 +65,24 @@ export function extractSpec(text) {
       continue;
     }
     const found = excerpt.match(matched.pattern);
+    const parsed = matched.certification ? parseCertification(found[1]) : { value: found[1].trim() };
     candidates.push({
       attributeId: matched.attributeId,
-      value: found[1].trim(),
+      value: parsed.value,
       unit: matched.unit,
       condition: matched.condition,
       lineNo: index + 1,
       excerpt,
+      certBody: parsed.body || null,
+      certId: parsed.id || null,
+      certUrl: parsed.url || null,
     });
   }
   return { candidates, notes };
+}
+
+function parseCertification(raw) {
+  const parts = String(raw).split("|").map((part) => part.trim()).filter(Boolean);
+  const [value, body, id, url] = parts;
+  return { value, body: body || null, id: id || null, url: url || null };
 }

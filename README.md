@@ -50,12 +50,20 @@ The missing piece is not another page that can place an order. It is a fact an a
 - 营销文案不提高完整度，也不能靠付费进入不符合约束的短名单。
 - 排序先过硬性约束，再按必填完整度、价格、库存。标价超过 30 天未更新的商品不进入推荐。
 - 同一个问题被确认晋升后，后来的代理直接拿到事实，不再给卖家添一条工单。
+- 型号和 GTIN 只认已确认事实。没有确认时返回未知，标题里的数字不能代替型号。
+- 安全认证带机构、编号和文件地址，卖家确认后才出现在详情里。
+- 搜索结果带上价格和库存的更新时间。标价过期、现货约束未满足，或硬性条件因为未知、冲突无法判断时，响应写明原因，这些商品不进入短名单。
+- 可售状态分为现货、缺货、预售和延期交货。预售和延期交货带可售日期。买家要求现货时，其他状态不命中。
+- 短名单里每条硬性结论带约束名、状态和事实标识。
+- `GET /.well-known/ucp` 说明本服务做调研，付款在卖家收银台。
+- 创建交接和回传订单要带幂等键。相同键和相同内容返回原结果；内容不同则拒绝。
+- 同一买家、同一商品在归因窗口内有多份短名单时，以先创建的那份为准。读取归因不返回买家标识。交接记下当时的价格，收银台若改价会标出差额。
 - 提问不接收预算、地址和身份信息。
 - 归因窗口 7 天。窗口外的订单不算平台成交。退货只把佣金标成「待冲正」，首期不发生真实扣款。
 
 更完整的规则、角色和验收标准在 [需求文档](docs/AI购物代理需求文档.md)，英文对照在 [requirements.en.md](docs/requirements.en.md)。
 
-The first category is USB-C power adapters. The acceptance cases are "continuous output of at least 65W" and "a product that does not support PD 3.1 must be excluded". Agents can search, read a product, compare, ask the seller, and create a handoff. A required field with no confirmed value returns "unknown". Unconfirmed extracts stay hidden. Conflicting facts cannot be used as a hard filter. Marketing copy does not raise completeness. Prices older than 30 days drop out of recommendations. One question cluster covers the same product, attribute, and condition. The attribution window is 7 days. A refund marks the commission as pending reversal. This release does not move money.
+The first category is USB-C power adapters. The acceptance cases are "continuous output of at least 65W" and "a product that does not support PD 3.1 must be excluded". Agents can search, read a product, compare, ask the seller, and create a handoff. A required field with no confirmed value returns "unknown". Unconfirmed extracts stay hidden. Conflicting facts cannot be used as a hard filter. Marketing copy does not raise completeness. Prices older than 30 days drop out of recommendations, and the response says why. Model, GTIN, and certifications count only after confirmation. Availability distinguishes in stock from preorder. Handoffs are idempotent, store the price seen then, and the earliest shortlist wins inside the attribution window. One question cluster covers the same product, attribute, and condition. The attribution window is 7 days. A refund marks the commission as pending reversal. This release does not move money.
 
 The fuller rules are in the [Chinese requirements](docs/AI购物代理需求文档.md) and the [English requirements](docs/requirements.en.md).
 
@@ -72,7 +80,7 @@ node src/server.js
 - 卖家页：上传规格书，确认或驳回候选，处理问题箱，查看归因。
 - 买家页：用「持续输出不低于 65W，且支持 PD 3.1」生成短名单，对比两件商品，再跳到模拟收银台。
 
-预置数据里有完整规格、峰值功率、不兼容 PD、未确认候选、事实冲突、标价过期和待提问商品，用来看筛选是否守住约束。
+预置数据里有完整规格、峰值功率、不兼容 PD、未确认候选、事实冲突、标价过期、待提问商品和预售商品，用来看筛选是否守住约束。
 
 ```bash
 node --test
@@ -83,7 +91,7 @@ You need Node.js 24, which provides `node:sqlite` and `node:test`. There is no `
 - Seller page: upload a spec sheet, confirm or reject candidates, handle the question inbox, and review attributions.
 - Buyer page: build a shortlist for "continuous output of at least 65W, and PD 3.1 required", compare two products, then open the simulated checkout.
 
-The seed data includes a complete spec, a peak-power claim, a product that does not support PD, unconfirmed candidates, a conflicting power fact, a stale price, and a product waiting for a question. Use them to see whether search holds the constraints. Run `node --test`.
+The seed data includes a complete spec, a peak-power claim, a product that does not support PD, unconfirmed candidates, a conflicting power fact, a stale price, a product waiting for a question, and a preorder adapter. Use them to see whether search holds the constraints. Run `node --test`.
 
 ## 首期明确不做
 

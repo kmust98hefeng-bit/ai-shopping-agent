@@ -2,56 +2,67 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>卖家录入</title>
+  <title>卖家录入 / Seller entry</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main>
-    <p><a href="/">返回</a></p>
-    <h1>卖家录入</h1>
+    <p><a href="/"><span class="bi">返回<span class="en">Back</span></span></a></p>
+    <h1><span class="bi">卖家录入<span class="en">Seller entry</span></span></h1>
     <p id="error" class="error"></p>
     <p id="sort-rule" class="rule"></p>
     <section>
-      <h2>卖家</h2>
-      <label>当前卖家
+      <h2><span class="bi">卖家<span class="en">Seller</span></span></h2>
+      <label><span class="bi">当前卖家<span class="en">Current seller</span></span>
         <select id="seller"></select>
       </label>
     </section>
     <section>
-      <h2>商品</h2>
+      <h2><span class="bi">商品<span class="en">Products</span></span></h2>
       <div id="product-list"></div>
     </section>
     <section>
-      <h2>新建商品</h2>
+      <h2><span class="bi">新建商品<span class="en">New product</span></span></h2>
       <form id="create-form">
-        <label>标题 <input id="title" required></label>
-        <label>价格（元） <input id="price" type="number" min="0" step="0.01" value="99" required></label>
-        <label>库存 <input id="stock" type="number" min="0" step="1" value="10" required></label>
-        <label><input id="returnable" type="checkbox" checked> 可退</label>
-        <label>营销说明（不计入完整度） <input id="description" placeholder="手感极佳"></label>
-        <button type="submit">创建</button>
+        <label><span class="bi">标题<span class="en">Title</span></span> <input id="title" required></label>
+        <label><span class="bi">英文标题<span class="en">English title</span></span> <input id="title-en" required></label>
+        <label><span class="bi">价格（元）<span class="en">Price (CNY)</span></span> <input id="price" type="number" min="0" step="0.01" value="99" required></label>
+        <label><span class="bi">库存<span class="en">Stock</span></span> <input id="stock" type="number" min="0" step="1" value="10" required></label>
+        <label><span class="bi">可售状态<span class="en">Availability</span></span>
+          <select id="availability">
+            <option value="in_stock">现货 / In stock</option>
+            <option value="out_of_stock">缺货 / Out of stock</option>
+            <option value="preorder">预售 / Preorder</option>
+            <option value="backorder">延期交货 / Backorder</option>
+          </select>
+        </label>
+        <label><span class="bi">可售日期（预售或延期交货）<span class="en">Available on (preorder or backorder)</span></span> <input id="available-at" type="date"></label>
+        <label><input id="returnable" type="checkbox" checked> <span class="bi">可退<span class="en">Returnable</span></span></label>
+        <label><span class="bi">营销说明（不计入完整度）<span class="en">Marketing copy (does not count toward completeness)</span></span> <input id="description" placeholder="手感极佳 / Feels great"></label>
+        <button type="submit"><span class="bi">创建<span class="en">Create</span></span></button>
       </form>
     </section>
     <section>
-      <h2 id="detail-title">商品详情</h2>
-      <div id="detail" class="muted">选择一个商品。</div>
+      <h2 id="detail-title"><span class="bi">商品详情<span class="en">Product detail</span></span></h2>
+      <div id="detail" class="muted"><span class="bi">选择一个商品。<span class="en">Choose a product.</span></span></div>
     </section>
     <section>
-      <h2>问题箱 <span id="inbox-count"></span></h2>
+      <h2><span class="bi">问题箱 <span id="inbox-count"></span><span class="en">Question inbox</span></span></h2>
       <div id="inbox"></div>
     </section>
     <section>
-      <h2>归因</h2>
+      <h2><span class="bi">归因<span class="en">Attribution</span></span></h2>
       <div id="attributions"></div>
     </section>
     <section>
-      <h2>类目模板</h2>
+      <h2><span class="bi">类目模板<span class="en">Category template</span></span></h2>
       <div id="template"></div>
       <form id="attribute-form">
-        <label>属性标识 <input id="attr-id" placeholder="color" required></label>
-        <label>名称 <input id="attr-name" required></label>
-        <label><input id="attr-required" type="checkbox"> 必填</label>
-        <button type="submit">增加属性</button>
+        <label><span class="bi">属性标识<span class="en">Attribute id</span></span> <input id="attr-id" placeholder="color" required></label>
+        <label><span class="bi">名称<span class="en">Name</span></span> <input id="attr-name" required></label>
+        <label><span class="bi">英文名称<span class="en">English name</span></span> <input id="attr-name-en" required></label>
+        <label><input id="attr-required" type="checkbox"> <span class="bi">必填<span class="en">Required</span></span></label>
+        <button type="submit"><span class="bi">增加属性<span class="en">Add attribute</span></span></button>
       </form>
     </section>
   </main>

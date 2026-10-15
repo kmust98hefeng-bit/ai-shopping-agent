@@ -29,7 +29,7 @@ test("search enforces continuous power, PD 3.1, freshness, and completeness orde
   const { store, now } = setup();
   t.after(() => store.close());
   const result = powerSearch(store, now, { boostProductId: "prod-partial" });
-  assert.deepEqual(result.products.map((product) => product.id), ["prod-65w", "prod-partial"]);
+  assert.deepEqual(result.products.map((product) => product.id), ["prod-65w", "prod-preorder", "prod-partial"]);
   const peak = store.getAgentProduct("prod-peak");
   assert.equal(peak.facts.find((fact) => fact.attributeId === "continuous_power_w").condition, "峰值");
   assert.equal(peak.facts.find((fact) => fact.attributeId === "continuous_power_w").matchesTemplateCondition, false);
@@ -55,8 +55,8 @@ test("marketing copy does not change completeness", (t) => {
   const { store, now } = setup();
   t.after(() => store.close());
   const product = store.getAgentProduct("prod-65w");
-  assert.equal(product.completeness.required, 3);
-  assert.equal(product.completeness.filled, 3);
+  assert.equal(product.completeness.required, 4);
+  assert.equal(product.completeness.filled, 4);
   assert.match(product.product.description.text, /手感极佳/);
   assert.match(product.notes.text, /手感极佳/);
   assert.equal(product.facts.some((fact) => String(fact.value).includes("手感")), false);
@@ -93,7 +93,7 @@ test("a failed extract keeps the product and leaves required fields unknown", (t
   const added = store.addDocument(created.id, { filename: "empty.txt", text: "今天天气不错" }, now);
   assert.equal(added.candidates.length, 0);
   assert.equal(store.product(created.id).title, "空规格");
-  assert.equal(store.getAgentProduct(created.id).unknown.length, 3);
+  assert.equal(store.getAgentProduct(created.id).unknown.length, 5);
 });
 
 test("sellers cannot invent filter fields, and template edits keep existing facts", (t) => {

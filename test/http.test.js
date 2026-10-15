@@ -33,22 +33,44 @@ test("tool routes search, hide unconfirmed facts, and create a handoff", async (
     productId: "prod-65w",
     constraints: { minContinuousPowerW: 65, requirePd31: true },
     address: "secret-addr-http",
-  });
+  }, { "idempotency-key": "http-handoff-1" });
   assert.equal(handoff.status, 201);
   assert.match(handoff.body.checkoutPath, /^\/checkout\.html\?id=/);
   const page = await fetch(`${origin}${handoff.body.checkoutPath}`);
   assert.equal(page.status, 200);
+  const replay = await post(origin, "/api/tools/create_handoff", {
+    buyerId: "buyer-http",
+    agentId: "agent-http",
+    productId: "prod-65w",
+    constraints: { minContinuousPowerW: 65, requirePd31: true },
+    address: "secret-addr-http",
+  }, { "idempotency-key": "http-handoff-1" });
+  assert.equal(replay.status, 201);
+  assert.equal(replay.body.id, handoff.body.id);
+  assert.equal(replay.headers.get("idempotent-replayed"), "true");
+  const clash = await post(origin, "/api/tools/create_handoff", {
+    buyerId: "buyer-other",
+    agentId: "agent-http",
+    productId: "prod-65w",
+    constraints: { minContinuousPowerW: 65, requirePd31: true },
+  }, { "idempotency-key": "http-handoff-1" });
+  assert.equal(clash.status, 422);
+  assert.equal(clash.body.code, "idempotency_conflict");
+  const profile = await fetch(`${origin}/.well-known/ucp`);
+  const described = await profile.json();
+  assert.equal(described.requiresHumanCheckout, true);
+  assert.equal(described.checkout, "seller");
   const detail = await fetch(`${origin}/api/handoffs/${handoff.body.id}`);
   const saved = await detail.json();
   assert.equal(saved.id, handoff.body.id);
   assert.equal(JSON.stringify(saved).includes("secret-addr-http"), false);
 });
 
-async function post(origin, pathname, body) {
+async function post(origin, pathname, body, headers = {}) {
   const response = await fetch(`${origin}${pathname}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: await response.json(), headers: response.headers };
 }

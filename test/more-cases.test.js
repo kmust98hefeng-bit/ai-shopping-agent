@@ -335,8 +335,9 @@ test("http routes reject a bad handoff and a short compare", async (t) => {
     agentId: "agent-http",
     productId: "prod-nopd",
     constraints: { requirePd31: true },
-  });
+  }, { "idempotency-key": "http-reject" });
   assert.equal(handoff.status, 409);
+  assert.equal(handoff.body.errorEn, "The product does not meet the current constraints");
 
   const compare = await post(origin, "/api/tools/compare_products", { productIds: ["prod-65w"] });
   assert.equal(compare.status, 400);
@@ -350,23 +351,106 @@ test("http routes reject a bad handoff and a short compare", async (t) => {
     agentId: "agent-http",
     productId: "prod-65w",
     constraints: { minContinuousPowerW: 65 },
-  });
+  }, { "idempotency-key": "http-paid" });
   const late = await post(origin, "/api/orders/report", {
     attributionId: paid.body.id,
     orderNo: "HTTP-LATE",
     amountCents: 9900,
     status: "paid",
-    reportedAt: now + WINDOW_MS + DAY,
-  });
+    reportedAt: paid.body.createdAt + WINDOW_MS + DAY,
+  }, { "idempotency-key": "http-late-order" });
   assert.equal(late.status, 200);
   assert.equal(late.body.counted, false);
 });
 
-async function post(origin, pathname, body) {
+test("visible facts, conclusions, and titles carry an English counterpart", (t) => {
+  const { store, now } = setup();
+  t.after(() => store.close());
+  const found = store.search({ minContinuousPowerW: 65, requirePd31: true }, now);
+  const first = found.products.find((product) => product.id === "prod-65w");
+  assert.equal(first.titleEn, "65W GaN adapter");
+  assert.equal(first.conclusions[0].claimEn.startsWith("Continuous output"), true);
+  const agent = store.getAgentProduct("prod-65w");
+  const power = agent.facts.find((fact) => fact.attributeId === "continuous_power_w");
+  assert.equal(power.nameEn, "Continuous output power");
+  assert.equal(power.trustLevelEn, "Spec");
+  const compared = store.compare(["prod-65w", "prod-conflict"]);
+  const row = compared.rows.find((item) => item.attributeId === "continuous_power_w");
+  assert.equal(row.nameEn, "Continuous output power");
+  assert.equal(row.cells[1].labelEn, "Conflict, not reliable");
+  const sellers = store.listSellers();
+  assert.equal(sellers.find((seller) => seller.id === "seller-a").nameEn, "Steady Voltage Studio");
+});
+
+test("model, certification, freshness messages, availability, and attribution stay checkable", (t) => {
+  const { store, now } = setup();
+  t.after(() => store.close());
+  const byModel = store.search({ modelCode: "GAN-65" }, now);
+  assert.deepEqual(byModel.products.map((product) => product.id), ["prod-65w"]);
+  assert.equal(byModel.products[0].conclusions[0].constraint, "modelCode");
+  assert.equal(byModel.products[0].conclusions[0].status, "met");
+  assert.ok(byModel.products[0].conclusions[0].factId);
+  const titled = store.search({ modelCode: "65W" }, now);
+  assert.equal(titled.products.some((product) => product.title.includes("65W")), false);
+  assert.ok(titled.messages.some((item) => item.code === "constraint_unknown" && item.attributeId === "model_code"));
+
+  const cert = store.getAgentProduct("prod-65w").facts.find((fact) => fact.attributeId === "safety_cert");
+  assert.equal(cert.certification.name, "CE");
+  assert.equal(cert.certification.body, "CQC");
+  assert.equal(cert.certification.id, "CQC-2024-65");
+  assert.equal(cert.certification.url, "https://example.com/certs/gan-65.pdf");
+
+  const power = store.search({ minContinuousPowerW: 65, requirePd31: true }, now);
+  const stale = power.messages.find((item) => item.productId === "prod-stale");
+  assert.equal(stale.code, "price_stale");
+  assert.equal(typeof stale.priceUpdatedAt, "number");
+  assert.ok(power.products.every((product) => product.priceUpdatedAt && product.stockUpdatedAt));
+  assert.ok(power.messages.some((item) => item.code === "constraint_conflict" && item.productId === "prod-conflict"));
+  assert.ok(power.products.some((product) => product.id === "prod-preorder" && product.availability === "preorder"));
+
+  const inStock = store.search({ minContinuousPowerW: 65, requirePd31: true, requireInStock: true }, now);
+  assert.equal(inStock.products.some((product) => product.id === "prod-preorder"), false);
+  assert.ok(inStock.messages.some((item) => item.code === "availability_excluded" && item.productId === "prod-preorder"));
+
+  const first = store.createHandoff({
+    buyerId: "buyer-same",
+    agentId: "agent-1",
+    productId: "prod-65w",
+    constraints: { minContinuousPowerW: 65 },
+  }, now);
+  const second = store.createHandoff({
+    buyerId: "buyer-same",
+    agentId: "agent-2",
+    productId: "prod-65w",
+    constraints: { minContinuousPowerW: 65 },
+  }, now + 1000);
+  const lateClaim = store.reportOrder({
+    attributionId: second.id,
+    orderNo: "SECOND",
+    amountCents: 9900,
+    status: "paid",
+    reportedAt: now + 2000,
+    reportedBy: "seller-a",
+  });
+  assert.equal(lateClaim.counted, false);
+  assert.equal(lateClaim.winningHandoffId, first.id);
+  assert.equal(store.listPlatformSales().some((order) => order.handoffId === second.id), false);
+  const saved = store.getHandoff(first.id);
+  assert.equal(saved.buyerId, undefined);
+  assert.equal(saved.priceChanged, false);
+  store.updateProduct("prod-65w", { priceCents: 10900 });
+  const changed = store.getHandoff(first.id);
+  assert.equal(changed.observedPriceCents, 9900);
+  assert.equal(changed.currentPriceCents, 10900);
+  assert.equal(changed.priceChanged, true);
+  assert.equal(changed.deltaCents, 1000);
+});
+
+async function post(origin, pathname, body, headers = {}) {
   const response = await fetch(`${origin}${pathname}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: await response.json(), headers: response.headers };
 }

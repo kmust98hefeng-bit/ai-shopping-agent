@@ -2,39 +2,41 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>买家短名单</title>
+  <title>买家短名单 / Buyer shortlist</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
   <main>
-    <p><a href="/">返回</a></p>
-    <h1>买家短名单</h1>
+    <p><a href="/"><span class="bi">返回<span class="en">Back</span></span></a></p>
+    <h1><span class="bi">买家短名单<span class="en">Buyer shortlist</span></span></h1>
     <p id="error" class="error"></p>
     <section>
-      <h2>约束</h2>
-      <label>最低持续输出功率（W） <input id="min-power" type="number" min="0" value="65"></label>
-      <label><input id="require-pd" type="checkbox" checked> 必须支持 PD 3.1</label>
-      <label>最高价格（元，可空） <input id="max-price" type="number" min="0" step="0.01"></label>
-      <label><input id="require-returnable" type="checkbox"> 必须可退</label>
-      <button id="search" type="button">生成短名单</button>
+      <h2><span class="bi">约束<span class="en">Constraints</span></span></h2>
+      <label><span class="bi">最低持续输出功率（W）<span class="en">Minimum continuous output (W)</span></span> <input id="min-power" type="number" min="0" value="65"></label>
+      <label><input id="require-pd" type="checkbox" checked> <span class="bi">必须支持 PD 3.1<span class="en">PD 3.1 required</span></span></label>
+      <label><span class="bi">最高价格（元，可空）<span class="en">Maximum price (CNY, optional)</span></span> <input id="max-price" type="number" min="0" step="0.01"></label>
+      <label><input id="require-returnable" type="checkbox"> <span class="bi">必须可退<span class="en">Must be returnable</span></span></label>
+      <label><input id="require-stock" type="checkbox"> <span class="bi">只要现货<span class="en">In stock only</span></span></label>
+      <label><span class="bi">型号（可空，只匹配已确认型号）<span class="en">Model (optional, confirmed model only)</span></span> <input id="model-code"></label>
+      <button id="search" type="button"><span class="bi">生成短名单<span class="en">Build shortlist</span></span></button>
     </section>
     <section>
-      <h2>短名单</h2>
-      <div id="shortlist" class="muted">还没有结果。</div>
+      <h2><span class="bi">短名单<span class="en">Shortlist</span></span></h2>
+      <div id="shortlist" class="muted"><span class="bi">还没有结果。<span class="en">No results yet.</span></span></div>
     </section>
     <section>
-      <h2>询问卖家</h2>
-      <label>商品
+      <h2><span class="bi">询问卖家<span class="en">Ask the seller</span></span></h2>
+      <label><span class="bi">商品<span class="en">Product</span></span>
         <select id="ask-product"></select>
       </label>
-      <button id="ask-button" type="button">询问 PD 3.1 兼容</button>
+      <button id="ask-button" type="button"><span class="bi">询问 PD 3.1 兼容<span class="en">Ask about PD 3.1</span></span></button>
       <div id="ask-result"></div>
     </section>
     <section>
-      <h2>对比</h2>
-      <label>商品甲 <select id="compare-a"></select></label>
-      <label>商品乙 <select id="compare-b"></select></label>
-      <button id="compare" type="button">对比</button>
+      <h2><span class="bi">对比<span class="en">Compare</span></span></h2>
+      <label><span class="bi">商品甲<span class="en">Product A</span></span> <select id="compare-a"></select></label>
+      <label><span class="bi">商品乙<span class="en">Product B</span></span> <select id="compare-b"></select></label>
+      <button id="compare" type="button"><span class="bi">对比<span class="en">Compare</span></span></button>
       <div id="compare-result"></div>
     </section>
   </main>

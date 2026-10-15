@@ -4,7 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createStore, seedDemo } from "./db.js";
 import { fail } from "./domain/errors.js";
-import { CATEGORY, SORT_RULE } from "./domain/template.js";
+import { englishError } from "./domain/i18n.js";
+import { CATEGORY, SORT_RULE, SORT_RULE_EN } from "./domain/template.js";
+import { capabilityProfile } from "./domain/profile.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = path.join(root, "public");
@@ -18,8 +20,10 @@ export function createApp(store) {
   return http.createServer((req, res) => {
     handle(req, res, store).catch((error) => {
       if (!error.status) console.error(error);
+      const errorText = error.status ? error.message : "服务器错误";
       sendJson(res, error.status || 500, {
-        error: error.status ? error.message : "服务器错误",
+        error: errorText,
+        errorEn: englishError(errorText),
         ...(error.extra || {}),
       });
     });
@@ -32,8 +36,16 @@ async function handle(req, res, store) {
   const now = Date.now();
 
   if (req.method === "GET" && pathname === "/api/health") return sendJson(res, 200, { ok: true });
+  if (req.method === "GET" && (pathname === "/.well-known/ucp" || pathname === "/api/profile")) {
+    return sendJson(res, 200, capabilityProfile());
+  }
   if (req.method === "GET" && pathname === "/api/template") {
-    return sendJson(res, 200, { category: CATEGORY, attributes: store.listAttributes(), sortRule: SORT_RULE });
+    return sendJson(res, 200, {
+      category: CATEGORY,
+      attributes: store.listAttributes(),
+      sortRule: SORT_RULE,
+      sortRuleEn: SORT_RULE_EN,
+    });
   }
   if (req.method === "POST" && pathname === "/api/admin/attributes") {
     return sendJson(res, 201, store.addAttribute(await readJson(req)));
@@ -113,26 +125,33 @@ async function handle(req, res, store) {
     return sendJson(res, 200, store.askSeller(await readJson(req), now));
   }
   if (req.method === "POST" && pathname === "/api/tools/create_handoff") {
-    return sendJson(res, 201, store.createHandoff(await readJson(req), now));
+    const body = await readJson(req);
+    const done = idempotent(req, store, "create_handoff", body, now, 201, () => store.createHandoff(body, now));
+    return sendJson(res, done.status, done.body, done.replayed ? { "idempotent-replayed": "true" } : {});
   }
   if (req.method === "POST" && pathname === "/api/orders/report") {
     const body = await readJson(req);
-    return sendJson(res, 200, store.reportOrder({ ...body, reportedAt: body.reportedAt ?? now }));
+    const done = idempotent(req, store, "report_order", body, now, 200, () => store.reportOrder({ ...body, reportedAt: body.reportedAt ?? now }));
+    return sendJson(res, done.status, done.body, done.replayed ? { "idempotent-replayed": "true" } : {});
   }
 
   const handoff = pathname.match(/^\/api\/handoffs\/([^/]+)$/);
   if (req.method === "GET" && handoff) return sendJson(res, 200, store.getHandoff(decodeURIComponent(handoff[1])));
 
   if (req.method === "GET") return serveStatic(res, pathname);
-  sendJson(res, 404, { error: "没有这个接口" });
+  sendJson(res, 404, { error: "没有这个接口", errorEn: englishError("没有这个接口") });
 }
 
 function serveStatic(res, pathname) {
   const requested = pathname === "/" ? "/index.html" : pathname;
   const resolved = path.resolve(publicDir, `.${requested}`);
   const relative = path.relative(publicDir, resolved);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) return sendJson(res, 403, { error: "禁止访问" });
-  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) return sendJson(res, 404, { error: "没有这个页面" });
+  if (relative.startsWith("..") || path.isAbsolute(relative)) {
+    return sendJson(res, 403, { error: "禁止访问", errorEn: englishError("禁止访问") });
+  }
+  if (!fs.existsSync(resolved) || !fs.statSync(resolved).isFile()) {
+    return sendJson(res, 404, { error: "没有这个页面", errorEn: englishError("没有这个页面") });
+  }
   res.writeHead(200, {
     "content-type": MIME[path.extname(resolved)] || "application/octet-stream",
     "cache-control": "no-store",
@@ -140,12 +159,24 @@ function serveStatic(res, pathname) {
   fs.createReadStream(resolved).pipe(res);
 }
 
-function sendJson(res, status, body) {
+function sendJson(res, status, body, headers = {}) {
   res.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
+    ...headers,
   });
   res.end(JSON.stringify(body));
+}
+
+function idempotent(req, store, endpoint, body, now, status, run) {
+  const key = String(req.headers["idempotency-key"] || "").trim();
+  if (!key || key.length > 255) throw fail(400, "缺少幂等键", { code: "idempotency_key_required" });
+  const hash = JSON.stringify(body);
+  const prior = store.readIdempotency(endpoint, key, hash);
+  if (prior) return { replayed: true, status: prior.status, body: prior.body };
+  const result = run();
+  store.saveIdempotency(endpoint, key, hash, status, result, now);
+  return { replayed: false, status, body: result };
 }
 
 async function readJson(req) {

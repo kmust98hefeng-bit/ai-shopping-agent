@@ -2,16 +2,19 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { evaluateOrder } from "./domain/attribution.js";
+import { evaluateOrder, WINDOW_MS } from "./domain/attribution.js";
 import { buildView, isPriceFresh, presentFact } from "./domain/facts.js";
 import { compareCatalog, normalizeConstraints, passesFacts, searchCatalog } from "./domain/catalog.js";
 import { extractSpec } from "./domain/extract.js";
 import { fail } from "./domain/errors.js";
+import { PRODUCT_EN, SELLER_EN, englishAttribute, gloss } from "./domain/i18n.js";
 import { ASK_DAILY_LIMIT, dayKey, decideAsk, missingAskFields, publicAskInput } from "./domain/questions.js";
 import {
   CATEGORY,
   DEFAULT_ATTRIBUTES,
   SORT_RULE,
+  SORT_RULE_EN,
+  AVAILABILITY,
   assertAttributeValue,
   findAttribute,
   sameValue,
@@ -127,11 +130,31 @@ CREATE TABLE IF NOT EXISTS orders (
   reported_by TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_facts_product ON facts(product_id);
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  endpoint TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  response_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (endpoint, idempotency_key)
+);
 `;
 
 export function createStore(filename, options = {}) {
   const db = new DatabaseSync(filename);
   db.exec(SCHEMA);
+  ensureColumn(db, "attributes", "name_en", "TEXT");
+  ensureColumn(db, "attributes", "condition_en", "TEXT");
+  ensureColumn(db, "products", "title_en", "TEXT");
+  ensureColumn(db, "products", "availability", "TEXT NOT NULL DEFAULT 'in_stock'");
+  ensureColumn(db, "products", "available_at", "INTEGER");
+  ensureColumn(db, "products", "stock_updated_at", "INTEGER");
+  ensureColumn(db, "facts", "cert_body", "TEXT");
+  ensureColumn(db, "facts", "cert_id", "TEXT");
+  ensureColumn(db, "facts", "cert_url", "TEXT");
+  ensureColumn(db, "handoffs", "price_cents", "INTEGER");
+  ensureColumn(db, "handoffs", "price_updated_at", "INTEGER");
   const store = new Store(db, options);
   store.ensureAttributes();
   return store;
@@ -160,14 +183,15 @@ export class Store {
   }
 
   ensureAttributes() {
-    const count = Number(this.db.prepare("SELECT COUNT(*) AS n FROM attributes").get().n);
-    if (count > 0) return;
     const insert = this.db.prepare(`
       INSERT INTO attributes (
-        id, name, data_type, unit, required, kind, condition, example, enum_values, sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, data_type, unit, required, kind, condition, example, enum_values, sort_order, name_en, condition_en
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    for (const attribute of DEFAULT_ATTRIBUTES) insert.run(...attributeParams(attribute));
+    for (const attribute of DEFAULT_ATTRIBUTES) {
+      if (this.attribute(attribute.id)) continue;
+      insert.run(...attributeParams(attribute));
+    }
   }
 
   countProducts() {
@@ -192,6 +216,8 @@ export class Store {
     const attribute = {
       id,
       name: String(input.name).trim(),
+      nameEn: input.nameEn ? String(input.nameEn).trim() : null,
+      conditionEn: input.conditionEn ? String(input.conditionEn).trim() : null,
       dataType: input.dataType,
       unit: input.unit || null,
       required: Boolean(input.required),
@@ -203,8 +229,8 @@ export class Store {
     };
     this.db.prepare(`
       INSERT INTO attributes (
-        id, name, data_type, unit, required, kind, condition, example, enum_values, sort_order
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, data_type, unit, required, kind, condition, example, enum_values, sort_order, name_en, condition_en
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(...attributeParams(attribute));
     return this.attribute(id);
   }
@@ -215,6 +241,8 @@ export class Store {
     const next = {
       ...current,
       name: patch.name ?? current.name,
+      nameEn: patch.nameEn === undefined ? current.nameEn : patch.nameEn,
+      conditionEn: patch.conditionEn === undefined ? current.conditionEn : patch.conditionEn,
       dataType: patch.dataType ?? current.dataType,
       unit: patch.unit === undefined ? current.unit : patch.unit,
       required: patch.required === undefined ? current.required : Boolean(patch.required),
@@ -225,7 +253,7 @@ export class Store {
     };
     this.db.prepare(`
       UPDATE attributes
-      SET name = ?, data_type = ?, unit = ?, required = ?, kind = ?, condition = ?, example = ?, enum_values = ?
+      SET name = ?, data_type = ?, unit = ?, required = ?, kind = ?, condition = ?, example = ?, enum_values = ?, name_en = ?, condition_en = ?
       WHERE id = ?
     `).run(
       next.name,
@@ -236,13 +264,19 @@ export class Store {
       next.condition,
       next.example,
       next.enumValues ? JSON.stringify(next.enumValues) : null,
+      next.nameEn || null,
+      next.conditionEn || null,
       id,
     );
     return this.attribute(id);
   }
 
   listSellers() {
-    return this.db.prepare("SELECT id, name FROM sellers ORDER BY name").all();
+    return this.db.prepare("SELECT id, name FROM sellers ORDER BY name").all().map((row) => ({
+      id: row.id,
+      name: row.name,
+      nameEn: SELLER_EN[row.id] || null,
+    }));
   }
 
   ensureSeller(id, name) {
@@ -258,13 +292,19 @@ export class Store {
         id: product.id,
         sellerId: product.sellerId,
         title: product.title,
+        titleEn: product.titleEn,
         status: product.status,
         priceCents: product.priceCents,
+        priceUpdatedAt: product.priceUpdatedAt,
         stock: product.stock,
+        stockUpdatedAt: product.stockUpdatedAt,
+        availability: product.availability,
+        availableAt: product.availableAt,
         returnable: product.returnable,
         completeness: view.completeness,
         missing: view.completeness.missing,
         conflicts: view.conflicts.map((group) => group.name),
+        conflictEns: view.conflicts.map((group) => group.nameEn),
       };
     });
   }
@@ -273,17 +313,25 @@ export class Store {
     const seller = this.db.prepare("SELECT id FROM sellers WHERE id = ?").get(input.sellerId);
     if (!seller) throw fail(400, "卖家不存在");
     const title = String(input.title || "").trim();
+    const titleEn = input.titleEn ? String(input.titleEn).trim() : null;
     if (!title) throw fail(400, "缺少商品标题");
     const priceCents = Number(input.priceCents);
     const stock = Number(input.stock);
     if (!Number.isInteger(priceCents) || priceCents < 0) throw fail(400, "价格无效");
     if (!Number.isInteger(stock) || stock < 0) throw fail(400, "库存无效");
+    const availability = input.availability || (stock > 0 ? "in_stock" : "out_of_stock");
+    if (!AVAILABILITY.includes(availability)) throw fail(400, "可售状态无效", { code: "invalid_availability" });
+    const availableAt = input.availableAt == null || input.availableAt === "" ? null : Number(input.availableAt);
+    if (availableAt != null && !Number.isFinite(availableAt)) throw fail(400, "可售日期无效", { code: "invalid_available_at" });
+    if ((availability === "preorder" || availability === "backorder") && availableAt == null) {
+      throw fail(400, "预售或延期交货需要可售日期", { code: "available_at_required" });
+    }
     const id = input.id || randomUUID();
     this.db.prepare(`
       INSERT INTO products (
         id, seller_id, category_id, title, status, price_cents, stock, returnable,
-        price_updated_at, description, notes, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?)
+        price_updated_at, description, notes, created_at, title_en, availability, available_at, stock_updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?)
     `).run(
       id,
       input.sellerId,
@@ -296,6 +344,10 @@ export class Store {
       input.priceUpdatedAt ?? now,
       input.description || "",
       now,
+      titleEn,
+      availability,
+      availableAt,
+      input.stockUpdatedAt ?? now,
     );
     return this.product(id);
   }
@@ -307,6 +359,24 @@ export class Store {
     const returnable = patch.returnable === undefined ? product.returnable : Boolean(patch.returnable);
     if (status !== "on_sale" && status !== "off_sale") throw fail(400, "商品状态无效");
     this.db.prepare("UPDATE products SET status = ?, returnable = ? WHERE id = ?").run(status, returnable ? 1 : 0, id);
+    if (patch.priceCents != null) {
+      const priceCents = Number(patch.priceCents);
+      if (!Number.isInteger(priceCents) || priceCents < 0) throw fail(400, "价格无效");
+      this.db.prepare("UPDATE products SET price_cents = ?, price_updated_at = ? WHERE id = ?").run(priceCents, Date.now(), id);
+    }
+    if (patch.stock != null) {
+      const stock = Number(patch.stock);
+      if (!Number.isInteger(stock) || stock < 0) throw fail(400, "库存无效");
+      this.db.prepare("UPDATE products SET stock = ?, stock_updated_at = ? WHERE id = ?").run(stock, Date.now(), id);
+    }
+    if (patch.availability != null) {
+      if (!AVAILABILITY.includes(patch.availability)) throw fail(400, "可售状态无效", { code: "invalid_availability" });
+      const availableAt = patch.availableAt == null || patch.availableAt === "" ? product.availableAt : Number(patch.availableAt);
+      if ((patch.availability === "preorder" || patch.availability === "backorder") && !Number.isFinite(availableAt)) {
+        throw fail(400, "预售或延期交货需要可售日期", { code: "available_at_required" });
+      }
+      this.db.prepare("UPDATE products SET availability = ?, available_at = ? WHERE id = ?").run(patch.availability, availableAt, id);
+    }
     return this.product(id);
   }
 
@@ -329,6 +399,7 @@ export class Store {
     ).all(id).map(rowToDocument);
     return {
       sortRule: SORT_RULE,
+      sortRuleEn: SORT_RULE_EN,
       product: presentProduct(product),
       documents,
       candidates,
@@ -337,14 +408,17 @@ export class Store {
     };
   }
 
-  getAgentProduct(id) {
+  getAgentProduct(id, now = Date.now()) {
     const product = this.product(id);
     if (!product) throw fail(404, "商品不存在");
     const attributes = this.listAttributes();
     const view = buildView(attributes, this.factsFor(id));
     return {
       role: "data",
-      product: presentProduct(product),
+      product: {
+        ...presentProduct(product),
+        priceFresh: isPriceFresh(product, now),
+      },
       ...view,
       notes: { role: "data", text: product.notes },
     };
@@ -386,6 +460,9 @@ export class Store {
           sourceType: "spec",
           sourceRef: `${docId}#L${candidate.lineNo}`,
           sourceExcerpt: candidate.excerpt,
+          certBody: candidate.certBody,
+          certId: candidate.certId,
+          certUrl: candidate.certUrl,
           version: this.maxVersion(productId, candidate.attributeId, candidate.condition) + 1,
           documentId: docId,
           lineNo: candidate.lineNo,
@@ -415,6 +492,9 @@ export class Store {
       status: "candidate",
       sourceType: "seller",
       sourceExcerpt: input.excerpt || null,
+      certBody: input.certBody || null,
+      certId: input.certId || null,
+      certUrl: input.certUrl || null,
       version: this.maxVersion(productId, attribute.id, condition) + 1,
       createdAt: now,
     });
@@ -481,6 +561,9 @@ export class Store {
         sourceType: "seller",
         sourceRef: fact.sourceRef,
         sourceExcerpt: fact.sourceExcerpt,
+        certBody: fact.certBody,
+        certId: fact.certId,
+        certUrl: fact.certUrl,
         confirmedBy: by,
         confirmedAt: now,
         version,
@@ -659,13 +742,17 @@ export class Store {
         productTitle: row.product_title,
         attributeId: row.attribute_id,
         attributeName: attribute?.name || row.attribute_id,
+        attributeNameEn: attribute?.nameEn || englishAttribute(row.attribute_id).nameEn,
+        productTitleEn: PRODUCT_EN[row.product_id] || null,
         condition: row.condition,
+        conditionEn: attribute?.conditionEn || englishAttribute(row.attribute_id).conditionEn || gloss(row.condition),
         status: row.status,
         createdAt: row.created_at,
         conflict: Number(conflict.n) > 0,
         answers: answers.map((answer) => ({
           id: answer.id,
           trustLevel: answer.trust_level,
+          trustLevelEn: gloss(answer.trust_level),
           createdAt: answer.created_at,
           body: { role: "data", text: answer.body },
         })),
@@ -727,12 +814,15 @@ export class Store {
     const view = buildView(attributes, this.factsFor(product.id));
     const record = { product, facts: this.factsFor(product.id) };
     if (product.status !== "on_sale" || !passesFacts(view, constraints)) {
-      throw fail(409, "商品不满足当前约束");
+      throw fail(409, "商品不满足当前约束", { code: "constraint_failed" });
     }
-    if (!isPriceFresh(product, now)) throw fail(409, "商品标价已过期");
+    if (!isPriceFresh(product, now)) throw fail(409, "商品标价已过期", { code: "price_stale" });
+    if (constraints.requireInStock && product.availability !== "in_stock") {
+      throw fail(409, "商品不是现货", { code: "availability_excluded" });
+    }
     const result = searchCatalog([record], attributes, { ...constraints, page: 1, pageSize: 1 }, now);
     const item = result.products[0];
-    if (!item) throw fail(409, "商品不满足当前约束");
+    if (!item) throw fail(409, "商品不满足当前约束", { code: "constraint_failed" });
     const id = randomUUID();
     const shortlist = {
       role: "data",
@@ -746,9 +836,20 @@ export class Store {
       }
     }
     this.db.prepare(`
-      INSERT INTO handoffs (id, buyer_id, agent_id, product_id, seller_id, shortlist_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, input.buyerId, input.agentId, product.id, product.sellerId, JSON.stringify(shortlist), now);
+      INSERT INTO handoffs (
+        id, buyer_id, agent_id, product_id, seller_id, shortlist_json, created_at, price_cents, price_updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      input.buyerId,
+      input.agentId,
+      product.id,
+      product.sellerId,
+      JSON.stringify(shortlist),
+      now,
+      product.priceCents,
+      product.priceUpdatedAt,
+    );
     return {
       id,
       productId: product.id,
@@ -761,13 +862,19 @@ export class Store {
   getHandoff(id) {
     const row = this.db.prepare("SELECT * FROM handoffs WHERE id = ?").get(id);
     if (!row) throw fail(404, "归因不存在");
+    const product = this.product(row.product_id);
+    const observedPriceCents = row.price_cents == null ? product.priceCents : row.price_cents;
     return {
       id: row.id,
-      buyerId: row.buyer_id,
-      agentId: row.agent_id,
       productId: row.product_id,
       sellerId: row.seller_id,
       createdAt: row.created_at,
+      observedPriceCents,
+      observedPriceUpdatedAt: row.price_updated_at,
+      currentPriceCents: product.priceCents,
+      currentPriceUpdatedAt: product.priceUpdatedAt,
+      priceChanged: product.priceCents !== observedPriceCents,
+      deltaCents: product.priceCents - observedPriceCents,
       shortlist: JSON.parse(row.shortlist_json),
     };
   }
@@ -794,11 +901,21 @@ export class Store {
     if (!Number.isInteger(amountCents) || amountCents < 0) throw fail(400, "订单金额无效");
     if (input.status !== "paid" && input.status !== "refunded") throw fail(400, "订单状态无效");
     const reportedAt = input.reportedAt;
-    const evaluation = evaluateOrder({
+    let evaluation = evaluateOrder({
       handoffCreatedAt: handoff.created_at,
       reportedAt,
       status: input.status,
     });
+    const earlier = this.db.prepare(`
+      SELECT id, created_at FROM handoffs
+      WHERE buyer_id = ? AND product_id = ? AND created_at < ?
+      ORDER BY created_at ASC
+    `).all(handoff.buyer_id, handoff.product_id, handoff.created_at);
+    const winner = earlier.find((row) => reportedAt - row.created_at <= WINDOW_MS);
+    if (winner) {
+      evaluation = { counted: false, commissionStatus: null, commissionStatusEn: null, platformSale: false };
+    }
+    const winningHandoffId = winner ? winner.id : handoff.id;
     const existing = this.db.prepare("SELECT * FROM orders WHERE handoff_id = ?").get(handoff.id);
     if (existing) {
       this.db.prepare(`
@@ -815,7 +932,7 @@ export class Store {
         input.reportedBy || null,
         existing.id,
       );
-      return this.orderByHandoff(handoff.id);
+      return { ...this.orderByHandoff(handoff.id), winningHandoffId };
     }
     const id = randomUUID();
     this.db.prepare(`
@@ -833,7 +950,7 @@ export class Store {
       reportedAt,
       input.reportedBy || null,
     );
-    return this.orderByHandoff(handoff.id);
+    return { ...this.orderByHandoff(handoff.id), winningHandoffId };
   }
 
   orderByHandoff(handoffId) {
@@ -902,8 +1019,8 @@ export class Store {
       INSERT INTO facts (
         id, product_id, attribute_id, value, unit, condition, trust_level, status, source_type,
         source_ref, source_excerpt, confirmed_by, confirmed_at, version, supersedes_id, question_id,
-        document_id, line_no, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        document_id, line_no, created_at, cert_body, cert_id, cert_url
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       input.productId,
@@ -924,6 +1041,9 @@ export class Store {
       input.documentId ?? null,
       input.lineNo ?? null,
       input.createdAt,
+      input.certBody ?? null,
+      input.certId ?? null,
+      input.certUrl ?? null,
     );
     return this.fact(id);
   }
@@ -980,6 +1100,22 @@ export class Store {
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `).run(randomUUID(), agentId, sellerId, clusterId, createdHuman ? 1 : 0, dayKey(now), now);
   }
+
+  readIdempotency(endpoint, key, hash) {
+    const row = this.db.prepare(
+      "SELECT request_hash, status, response_json FROM idempotency_keys WHERE endpoint = ? AND idempotency_key = ?",
+    ).get(endpoint, key);
+    if (!row) return null;
+    if (row.request_hash !== hash) throw fail(422, "幂等键与请求内容不一致", { code: "idempotency_conflict" });
+    return { status: row.status, body: JSON.parse(row.response_json) };
+  }
+
+  saveIdempotency(endpoint, key, hash, status, body, now) {
+    this.db.prepare(`
+      INSERT INTO idempotency_keys (endpoint, idempotency_key, request_hash, status, response_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(endpoint, key, hash, status, JSON.stringify(body), now);
+  }
 }
 
 function trustForSource(sourceType) {
@@ -1000,13 +1136,24 @@ function attributeParams(attribute) {
     attribute.example,
     attribute.enumValues ? JSON.stringify(attribute.enumValues) : null,
     attribute.sortOrder,
+    attribute.nameEn || null,
+    attribute.conditionEn || null,
   ];
+}
+
+function ensureColumn(db, table, name, type) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((column) => column.name === name)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+  }
 }
 
 function rowToAttribute(row) {
   return {
     id: row.id,
     name: row.name,
+    nameEn: row.name_en || englishAttribute(row.id).nameEn,
+    conditionEn: row.condition_en || englishAttribute(row.id).conditionEn || gloss(row.condition),
     dataType: row.data_type,
     unit: row.unit,
     required: row.required === 1,
@@ -1024,11 +1171,15 @@ function rowToProduct(row) {
     sellerId: row.seller_id,
     categoryId: row.category_id,
     title: row.title,
+    titleEn: row.title_en || PRODUCT_EN[row.id] || null,
     status: row.status,
     priceCents: row.price_cents,
     stock: row.stock,
     returnable: row.returnable === 1,
     priceUpdatedAt: row.price_updated_at,
+    stockUpdatedAt: row.stock_updated_at || row.price_updated_at,
+    availability: row.availability || (row.stock > 0 ? "in_stock" : "out_of_stock"),
+    availableAt: row.available_at,
     description: row.description,
     notes: row.notes,
     createdAt: row.created_at,
@@ -1041,11 +1192,15 @@ function presentProduct(product) {
     sellerId: product.sellerId,
     categoryId: product.categoryId,
     title: product.title,
+    titleEn: product.titleEn || PRODUCT_EN[product.id] || null,
     status: product.status,
     priceCents: product.priceCents,
     stock: product.stock,
     returnable: product.returnable,
     priceUpdatedAt: product.priceUpdatedAt,
+    stockUpdatedAt: product.stockUpdatedAt,
+    availability: product.availability,
+    availableAt: product.availableAt,
     description: { role: "data", text: product.description },
   };
 }
@@ -1080,6 +1235,9 @@ function rowToFact(row) {
     questionId: row.question_id,
     documentId: row.document_id,
     lineNo: row.line_no,
+    certBody: row.cert_body,
+    certId: row.cert_id,
+    certUrl: row.cert_url,
     createdAt: row.created_at,
   };
 }
@@ -1110,6 +1268,9 @@ export function seedDemo(store, now) {
     "持续输出功率: 65W",
     "PD 3.1: 支持",
     "是否含电源线: 不含电源线",
+    "型号: GAN-65",
+    "GTIN: 6901234567890",
+    "安全认证: CE | CQC | CQC-2024-65 | https://example.com/certs/gan-65.pdf",
     "输入电压: 100-240V",
     "手感极佳，官方正品",
   ].join("\n");
@@ -1237,6 +1398,23 @@ export function seedDemo(store, now) {
     filename: "ask.txt",
     text: ["持续输出功率: 65W", "是否含电源线: 含电源线"].join("\n"),
   }, now).candidates, "seller-a", now);
+
+  store.createProduct({
+    id: "prod-preorder",
+    sellerId: "seller-b",
+    title: "预售 65W 适配器",
+    priceCents: 15900,
+    stock: 0,
+    returnable: false,
+    availability: "preorder",
+    availableAt: now + 14 * DAY,
+    description: "",
+    priceUpdatedAt: fresh,
+  }, now);
+  confirmAll(store, store.addDocument("prod-preorder", {
+    filename: "preorder.txt",
+    text: ["持续输出功率: 65W", "PD 3.1: 支持", "是否含电源线: 含电源线", "型号: PRE-65"].join("\n"),
+  }, now).candidates, "seller-b", now);
 }
 
 function confirmAll(store, candidates, by, now) {

@@ -42,6 +42,14 @@ Rules already implemented:
 - After a question is confirmed and promoted, later agents receive the fact. The seller does not get another inbox item for the same question.
 - An ask does not accept budget, address, or identity, and those fields are not stored.
 - The attribution window is 7 days. An order outside the window is not a platform sale. A refund only marks the commission as pending reversal. This release does not move money.
+- A model code or GTIN counts only as a confirmed fact. An unconfirmed value is unknown. Digits in the title are not a model code.
+- A safety certification carries an issuer, a certificate id, and a document URL, and it is visible to agents only after the seller confirms it.
+- Search returns the price and stock update times. A stale price, a missed in-stock constraint, or a hard constraint that is unknown or in conflict is named in the response. Those products stay off the shortlist.
+- Availability is in stock, out of stock, preorder, or backorder. Preorder and backorder include a date. An in-stock constraint does not match the other states.
+- Each hard shortlist conclusion carries the constraint, a status, and a fact id.
+- `GET /.well-known/ucp` states that this service does research and that payment stays at the seller checkout.
+- Handoff creation and order reports require an idempotency key. The same key with the same body returns the original result. A different body is rejected.
+- If the same buyer and product have several shortlists inside the attribution window, the earliest handoff wins. A handoff read does not return the buyer id. The handoff stores the price seen then, and checkout shows a difference when the price changes.
 
 The fuller rules, roles, and acceptance criteria are in the [requirements document](docs/requirements.en.md). The Chinese original is [here](docs/AI购物代理需求文档.md).
 
@@ -58,7 +66,7 @@ Open <http://127.0.0.1:3780>.
 - Seller page: upload a spec sheet, confirm or reject candidates, handle the question inbox, and review attributions.
 - Buyer page: build a shortlist for "continuous output of at least 65W, and PD 3.1 required", compare two products, then open the simulated checkout.
 
-The seed data includes a complete spec, a peak-power claim, a product that does not support PD, unconfirmed candidates, a conflicting power fact, a stale price, and a product waiting for a question. Use them to see whether search holds the constraints.
+The seed data includes a complete spec, a peak-power claim, a product that does not support PD, unconfirmed candidates, a conflicting power fact, a stale price, a product waiting for a question, and a preorder adapter. Use them to see whether search holds the constraints.
 
 ```bash
 node --test
